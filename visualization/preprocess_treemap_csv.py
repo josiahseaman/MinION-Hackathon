@@ -46,8 +46,10 @@ if __name__ == '__main__':
         print("Usage: python preprocess_treemap_csv.py INPUT_PATH OUTPUT_PATH")
         print("Adds parent entries in the hierarchy")
         print("Example: python preprocess_treemap_csv.py flare-stripped.csv augmented-flare.csv")
+        print("You'll need to process the input csv file into something treemap can read using this program."
+              " Point the treemap website at the output of this script OUTPUT_PATH")
     add_parents(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else None)
 
 r"""Running with:
-python preprocess_treemap_csv.py ..\..\horrible_ncbi_taxonomy\temporary_taxonomy_list.csv "D:\josiah\Projects\DDV\build\www-data\dnadata\Treemap\flare.csv"
+python preprocess_treemap_csv.py ..\horrible_ncbi_taxonomy\temporary_taxonomy_list.csv "D:\josiah\Projects\DDV\build\www-data\dnadata\Treemap\flare.csv"
 """
