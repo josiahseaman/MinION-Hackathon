@@ -6,13 +6,15 @@ def _add_parent_rows(rows):
     parents_seen = set()
     new_rows = []
     for row in rows:
-        parts = row[0].split('.')[:-1]
+        parts = row[0].split('.')
         for i, level in enumerate(parts):
             path = '.'.join(parts[:i+1])
             if path not in parents_seen:
                 parents_seen.add(path)
-                new_rows.append([path,''])
-        new_rows.append(row)
+                if i == len(parts) - 1:
+                    new_rows.append(row)
+                else:
+                    new_rows.append([path, ''])
     return new_rows
 # Test: _add_parent_rows(rows)
 
@@ -22,8 +24,8 @@ def add_parents(input_path, output_path, row_limit=None):
         f = csv.reader(csvfile)
         rows = []
         for row in f:
-            if ' ' in row[0].split('.')[-1]:  # only species
-                rows.append([part for part in row] )
+            # if ' ' not in row[0].split('.')[-1]:  # only species
+            rows.append([part for part in row] )
         rows.sort(key=lambda x: x[0])
         # rows = rows[1:]  # skip first
 
