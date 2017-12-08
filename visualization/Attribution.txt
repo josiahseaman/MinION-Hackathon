@@ -1,0 +1,5 @@
+Original example for our CSV to Treemap program was taken from Mike Bostock.
+
+https://gist.github.com/mbostock/6bbb0a7ff7686b124d80
+
+license: gpl-3.0
