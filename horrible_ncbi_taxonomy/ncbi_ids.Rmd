@@ -1,0 +1,40 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Horrible way to list NCBI lineage information for a set of taxids..
+
+First use rentrez (`install.packages('rentrez'))`). Then:
+
+```{r}
+library(rentrez)
+
+#horrible one-liners collection:
+
+# get a single ID:
+aost=(entrez_search(db="taxonomy",term='Armillaria ostoaye[ORGN]'))$ids[1]
+
+# get info for that ID:
+(entrez_fetch(db='taxonomy',id=aost,rettype='text'))
+
+# specifically get the lineage
+XML::xpathSApply(entrez_fetch(db='taxonomy',id=aost,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue)
+
+# cat the lineage into a list
+cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=((entrez_search(db="taxonomy",term='Melampsora larici populina[ORGN]'))$ids[1]),rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep=".")
+```
+
+Clearly, that's a bit horrible... but we can live with it. Open a text file and walk through them..
+
+```{r}
+JGI_names = read.csv('pepijn_jgi_names.csv',header=T)
+str(JGI_names)
+for(i in 1:length(JGI_names$species_name)){
+  text_query = paste(JGI_names$species_name[i],'[ORGN]',sep='')
+  this_ncbi_id = ((entrez_search(db="taxonomy",term=text_query))$ids[1])
+  cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=this_ncbi_id,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep=".")
+  Sys.sleep(2)
+}
+```
+
