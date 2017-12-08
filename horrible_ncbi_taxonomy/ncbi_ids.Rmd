@@ -42,11 +42,11 @@ for(i in 1:length(JGI_names$species_name)){
 
 Same thing again with less frills:
 ```{r}
-JGI_names = read.csv('pepijn_jgi_names.csv',header=T)
+JGI_names = read.csv('species_names_for_map.csv',header=T)
 JGI_names$JGI_lineage = rep('',length(JGI_names$species_name))
 for(i in 1:length(JGI_names$species_name)){
  print('',sep="\n")
- text_query = paste(JGI_names$species_name[i],'[ORGN]',sep='')
+ text_query = paste(JGI_names$species_name[i],'[ORGN] AND "genus"[Rank]',sep='')
   this_ncbi_id = ((entrez_search(db="taxonomy",term=text_query))$ids[1])
   try(cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=this_ncbi_id,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep="."),silent=T)
   #Sys.sleep(1)
