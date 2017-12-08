@@ -17,15 +17,22 @@ def _add_parent_rows(rows):
 # Test: _add_parent_rows(rows)
 
 
-def add_parents(input_path, output_path):
+def add_parents(input_path, output_path, row_limit=None):
     with open(input_path, 'r') as csvfile:
         f = csv.reader(csvfile)
-        rows = [row for row in f]
+        rows = []
+        for row in f:
+            if ' ' in row[0].split('.')[-1]:  # only species
+                rows.append([part for part in row] )
+        rows.sort(key=lambda x: x[0])
         # rows = rows[1:]  # skip first
 
-    new_rows = _add_parent_rows(rows)
+    if row_limit is None:
+        row_limit = len(rows)
+    new_rows = _add_parent_rows(rows[:row_limit])
 
     with open(output_path, 'w') as out:
+        out.write('id,value\n')
         for row in new_rows:
             out.write(','.join(row) + '\n')
 # Test: add_parents('visualization/Treemap/flare-stripped.csv', 'visualization/Treemap/augmented-flare.csv')
@@ -33,8 +40,12 @@ def add_parents(input_path, output_path):
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Usage: python preprocess_treemap_csv.py INPUT_PATH OUTPUT_PATH")
         print("Adds parent entries in the hierarchy")
         print("Example: python preprocess_treemap_csv.py flare-stripped.csv augmented-flare.csv")
-    add_parents(sys.argv[1], sys.argv[2])
+    add_parents(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else None)
+
+r"""Running with:
+python preprocess_treemap_csv.py ..\..\horrible_ncbi_taxonomy\temporary_taxonomy_list.csv "D:\josiah\Projects\DDV\build\www-data\dnadata\Treemap\flare.csv"
+"""
