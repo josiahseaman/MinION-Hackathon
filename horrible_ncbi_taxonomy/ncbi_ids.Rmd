@@ -29,12 +29,26 @@ Clearly, that's a bit horrible... but we can live with it. Open a text file and 
 
 ```{r}
 JGI_names = read.csv('pepijn_jgi_names.csv',header=T)
-str(JGI_names)
+JGI_names$JGI_lineage = rep('',length(JGI_names$species_name))
 for(i in 1:length(JGI_names$species_name)){
-  text_query = paste(JGI_names$species_name[i],'[ORGN]',sep='')
+ print(JGI_names$species_name[i],sep="\n")
+ text_query = paste(JGI_names$species_name[i],'[ORGN]',sep='')
   this_ncbi_id = ((entrez_search(db="taxonomy",term=text_query))$ids[1])
-  cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=this_ncbi_id,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep=".")
-  Sys.sleep(2)
+  try(cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=this_ncbi_id,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep="."),silent=T)
+  #Sys.sleep(1)
 }
 ```
 
+
+Same thing again with less frills:
+```{r}
+JGI_names = read.csv('pepijn_jgi_names.csv',header=T)
+JGI_names$JGI_lineage = rep('',length(JGI_names$species_name))
+for(i in 1:length(JGI_names$species_name)){
+ print('',sep="\n")
+ text_query = paste(JGI_names$species_name[i],'[ORGN]',sep='')
+  this_ncbi_id = ((entrez_search(db="taxonomy",term=text_query))$ids[1])
+  try(cat(XML::xpathSApply(entrez_fetch(db='taxonomy',id=this_ncbi_id,rettype='xml',parsed=T), "//LineageEx/Taxon/ScientificName", XML::xmlValue),sep="."),silent=T)
+  #Sys.sleep(1)
+}
+```
