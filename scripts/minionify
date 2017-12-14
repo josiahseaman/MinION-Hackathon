@@ -1,0 +1,105 @@
+#!/usr/bin/env python
+
+import sys
+import getopt
+import random
+
+import Bio
+import Bio.Seq
+import Bio.SeqRecord
+import Bio.SeqIO
+import Bio.Alphabet.IUPAC
+
+import paftol
+
+
+class Minionifier(object):
+    
+    def __init__(self, minReadLength, maxReadLength, substitutionRate=0.0, indelRate=0.0, rng=None, alphabet=None):
+        self.minReadLength = minReadLength
+        self.maxReadLength = maxReadLength
+        self.substitutionRate = substitutionRate
+        self.indelRate = indelRate
+        if rng is None:
+            self.rng = random.Random(1)
+        else:
+            self.rng = rng
+        if alphabet is None:
+            self.alphabet = Bio.Alphabet.IUPAC.unambiguous_dna
+        else:
+            self.alphabet = alphabet
+            
+    def randomSymbol(self):
+        return self.rng.sample(self.alphabet.letters, 1)[0]
+
+    def minionify(self, inFname, outfile, numReads):
+        # FIXME: this method may have imprecisions around edge cases of reads / sequences
+        genomeId = inFname
+        srList = list(Bio.SeqIO.parse(inFname, 'fasta'))
+        for i in xrange(numReads):
+            sr = self.rng.sample(srList, 1)[0]
+            maxStart = len(sr) - self.minReadLength
+            if maxStart <= 0:
+                readStart = 0
+            else:
+                readStart = self.rng.randrange(maxStart)
+            maxReadLength = min(self.maxReadLength, len(sr) - readStart)
+            readLength = self.rng.randrange(maxReadLength) + 1
+            s = str(sr[readStart:(readStart + readLength)].seq)
+            readSeq = ''
+            if self.rng.random() < self.indelRate:
+                readSeq = self.randomSymbol()
+            for j in xrange(len(s)):
+                if self.rng.random() >= self.indelRate:
+                    if self.rng.random() < self.substitutionRate:
+                        readSeq = readSeq + self.randomSymbol()
+                    else:
+                        readSeq = readSeq + s[j]
+                    if self.rng.random() < self.indelRate:
+                        readSeq = readSeq + self.randomSymbol()
+            read = Bio.SeqRecord.SeqRecord(Bio.Seq.Seq(readSeq, alphabet = self.alphabet), id='%s:%s:%d-%d' % (genomeId, sr.id, readStart, readStart + readLength), description='subsitution rate: %f, indel rate: %f' % (self.substitutionRate, self.indelRate))
+            Bio.SeqIO.write([read], outfile, 'fasta')
+
+
+rndseed = 1
+outFname = None
+substitutionRate = 0.0
+indelRate = 0.0
+minReadLength = 100
+maxReadLength = 10000
+options, args = getopt.getopt(sys.argv[1:], 'n:i:m:s:o:r:R:h')
+for opt, par in options:
+    if opt == '-h':
+        print 'options:'
+        print '-h: print this help and exit'
+        sys.exit()
+    elif opt == '-r':
+        minReadLength = int(par)
+    elif opt == '-R':
+        maxReadLength = int(par)
+    elif opt == '-n':
+        numReads = int(par)
+    elif opt == '-s':
+        rndseed = int(par)
+    elif opt == '-i':
+        indelRate = float(par)
+    elif opt == '-m':
+        substitutionRate = float(par)
+    elif opt == '-o':
+        if opt == '-':
+            outFname = None
+        else:
+            outFname = par
+    else:
+        raise StandardError, 'unhandled option "%s"' % opt
+rng = random.Random(rndseed)
+minionifier = Minionifier(minReadLength, maxReadLength, substitutionRate, indelRate, rng)
+if outFname is None:
+    outfile = sys.stdout
+else:
+    outfile = open(outFname, 'w')
+for inFname in args:
+    minionifier.minionify(inFname, outfile, numReads)
+if outFname is not None:
+    outfile.close()
+

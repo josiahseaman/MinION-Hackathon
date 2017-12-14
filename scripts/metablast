@@ -1,0 +1,256 @@
+#!/usr/bin/env python
+
+import sys
+import getopt
+import copy
+import csv
+import os
+import subprocess
+import logging
+
+import Bio
+import Bio.SeqIO
+import Bio.Blast
+import Bio.Blast.NCBIXML
+
+
+logging.basicConfig(format='%(levelname)s: %(module)s:%(lineno)d, %(funcName)s, %(asctime)s: %(message)s')
+logging.getLogger().setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+### lifted from paftools
+
+        
+class BlastAlignmentProcessor(object):
+    
+    def __init__(self):
+        self.blastAlignmentDict = {}
+        
+    def processBlastAlignment(self, query, blastAlignment):
+        if query not in self.blastAlignmentDict:
+            self.blastAlignmentDict[query] = []
+        self.blastAlignmentDict[query].append(blastAlignment)
+
+        
+class BlastRunner(object):
+
+    def __init__(self, numThreads, gapOpen, gapExtend, maxTargetSeqs, numAlignments, maxHsps, evalue, windowSize):
+        self.numThreads = numThreads
+        self.gapOpen = gapOpen
+        self.gapExtend = gapExtend
+        self.maxTargetSeqs = maxTargetSeqs
+        self.numAlignments = numAlignments
+        self.maxHsps = maxHsps
+        self.evalue = evalue
+        self.windowSize = windowSize
+
+    def indexDatabase(self, databaseFname, dbtype):
+        makeblastdbArgv = ['makeblastdb', '-dbtype', dbtype, '-in', databaseFname, '-parse_seqids']
+        logger.debug('%s', ' '.join(makeblastdbArgv))
+        makeblastdbProcess = subprocess.check_call(makeblastdbArgv)
+        
+    def makeBlastArgv(self, blastProgram, databaseFname):
+        blastArgv = [blastProgram]
+        if self.numThreads is not None:
+            blastArgv.extend(['-num_threads', '%d' % self.numThreads])
+        if self.gapOpen is not None:
+            blastArgv.extend(['-gapopen', '%d' % self.gapOpen])
+        if self.gapExtend is not None:
+            blastArgv.extend(['-gapextend', '%d' % self.gapExtend])
+        if self.maxTargetSeqs is not None:
+            blastArgv.extend(['-max_target_seqs', '%d' % self.maxTargetSeqs])
+        if self.numAlignments is not None:
+            blastArgv.extend(['-num_alignments', '%d' % self.numAlignments])
+        if self.maxHsps is not None:
+            blastArgv.extend(['-max_hsps', '%d' % self.maxHsps])
+        if self.evalue is not None:
+            blastArgv.extend(['-evalue', '%1.12g' % self.evalue])
+        if self.windowSize is not None:
+            blastArgv.extend(['-window_size', '%d' % self.windowSize])
+        blastArgv.extend(['-db', databaseFname, '-outfmt', '5'])
+        return blastArgv
+
+    def processBlast(self, blastProgram, blastAlignmentProcessor, databaseFname, queryList):
+        blastArgv = self.makeBlastArgv(blastProgram, databaseFname)
+        logger.debug('%s', ' '.join(blastArgv))
+        blastProcess = subprocess.Popen(blastArgv, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        pid = os.fork()
+        if pid == 0:
+            blastProcess.stdout.close()
+            for query in queryList:
+                blastProcess.stdin.write(query.format('fasta'))
+            blastProcess.stdin.close()
+            os._exit(0)
+        blastProcess.stdin.close()
+        for blastRecord in Bio.Blast.NCBIXML.parse(blastProcess.stdout):
+            for alignment in blastRecord.alignments:
+                blastAlignmentProcessor.processBlastAlignment(blastRecord.query, alignment)
+        blastProcess.stdout.close()
+        wPid, wExit = os.waitpid(pid, 0)
+        if pid != wPid:
+            raise StandardError, 'wait returned pid %s (expected %d)' % (wPid, pid)
+        if wExit != 0:
+            raise StandardError, 'wait on forked process returned %d' % wExit
+        blastReturncode = blastProcess.wait()
+        if blastReturncode != 0:
+            raise StandardError, 'process "%s" returned %d' % (' '.join(blastArgv), blastReturncode)
+    
+    
+class BlastnRunner(BlastRunner):
+
+    def __init__(self, numThreads=None, gapOpen=None, gapExtend=None, maxTargetSeqs=None, numAlignments=None, maxHsps=None, evalue=None, windowSize=None):
+        super(BlastnRunner, self).__init__(numThreads, gapOpen, gapExtend, maxTargetSeqs, numAlignments, maxHsps, evalue, windowSize)
+        
+    def indexDatabase(self, databaseFname):
+        super(BlastnRunner, self).indexDatabase(databaseFname, 'nucl')
+
+    def processBlast(self, blastAlignmentProcessor, databaseFname, queryList):
+        logger.debug('BlastnRunner.processBlast')
+        super(BlastnRunner, self).processBlast('blastn', blastAlignmentProcessor, databaseFname, queryList)
+
+
+class TblastnRunner(BlastRunner):
+
+    def __init__(self, numThreads=None, gapOpen=None, gapExtend=None, maxTargetSeqs=None, numAlignments=None, maxHsps=None, evalue=None, windowSize=None):
+        super(TblastnRunner, self).__init__(numThreads, gapOpen, gapExtend, maxTargetSeqs, numAlignments, maxHsps, evalue, windowSize)
+        
+    def indexDatabase(self, databaseFname):
+        super(TblastnRunner, self).indexDatabase(databaseFname, 'nucl')
+
+    def processTblastn(self, blastAlignmentProcessor, databaseFname, queryList):
+        super(TblastnRunner, self).processBlast('tblastn', blastAlignmentProcessor, databaseFname, queryList)
+
+        
+class DataFrame(object):
+
+    def __init__(self, columnHeaderList):
+        self.columnHeaderList = columnHeaderList[:]
+        self.rowDictList = []
+
+    def addRow(self, rowDict):
+        if set(rowDict.keys()) != set(self.columnHeaderList):
+            raise StandardError, 'key set %s is not compatible with column headers %s' % (', '.join([str(k) for k in rowDict.keys()]), ', '.join(self.columnHeaderList))
+        self.rowDictList.append(copy.copy(rowDict))
+
+    def nrow(self):
+        return len(self.rowDictList)
+
+    def getRowDict(self, rowIndex):
+        return self.rowDictList[rowIndex]
+
+    def writeCsv(self, f):
+        csvDictWriter = csv.DictWriter(f, self.columnHeaderList)
+        csvDictWriter.writeheader()
+        for rowDict in self.rowDictList:
+            csvDictWriter.writerow(rowDict)
+
+    def getColumn(self, columnName):
+        return [rowDict[columnName] for rowDict in self.rowDictList]        
+
+    
+### end lifted stuff
+
+
+class ReadReferenceAssociation(object):
+    
+    def __init__(self, read, refName, refSeqId, refStart, refEnd, score):
+        self.read = read
+        self.refName = refName
+        self.refSeqId = refSeqId
+        self.refStart = refStart
+        self.refEnd = refEnd
+        self.score = score
+        
+    def csvRowDict(self):
+        d = {}
+        d['read'] = self.read.id
+        d['refName'] = self.refName
+        d['refSeqId'] = self.refSeqId
+        d['refStart'] = self.refStart
+        d['refEnd'] = self.refEnd
+        d['score'] = self.score
+        return d
+
+    
+def makeAssociationDataFrame(associationList):
+    csvColumnList = ['read', 'refName', 'refSeqId', 'refStart', 'refEnd', 'score']
+    d = DataFrame(csvColumnList)
+    for association in associationList:
+        d.addRow(association.csvRowDict())
+    return d
+    
+
+class ReadIdentifier(object):
+    
+    def __init__(self):
+        pass
+
+
+class ReadIdentifierBlast(ReadIdentifier):
+    
+    def __init__(self, blastRunner, fastaDbList):
+        if blastRunner.numAlignments != 1:
+            raise StandardError, 'numAlignments must be 1'
+        self.blastRunner = blastRunner
+        self.fastaDbList = fastaDbList[:]
+        
+    def blastIndex(self):
+        for fastaDb in self.fastaDbList:
+            self.blastRunner.indexDatabase(fastaDb)
+
+    def identify(self, read):
+        logger.debug('processing read %s', read.id)
+        bestAssociation = None
+        for fastaDb in self.fastaDbList:
+            blastAlignmentProcessor = BlastAlignmentProcessor()
+            self.blastRunner.processBlast(blastAlignmentProcessor, fastaDb, [read])
+            if len(blastAlignmentProcessor.blastAlignmentDict) > 0:
+                if len(blastAlignmentProcessor.blastAlignmentDict) != 1:
+                    raise StandardError, 'unexpected: %d alignments' % len(blastAlignmentProcessor.blastAlignmentDict)
+                queryName = blastAlignmentProcessor.blastAlignmentDict.keys()[0]
+                for blastAlignment in blastAlignmentProcessor.blastAlignmentDict[queryName]:
+                    if len(blastAlignment.hsps) > 1:
+                        logger.warning('query %s: got %d HSPs, using only #0\n', queryName, len(blastAlignment.hsps))
+                    hsp = blastAlignment.hsps[0]
+                    if bestAssociation is None or bestAssociation.score < hsp.score:
+                        bestAssociation = ReadReferenceAssociation(read, fastaDb, blastAlignment.hit_id, hsp.sbjct_start, hsp.sbjct_end, hsp.score)
+        return bestAssociation
+    
+    def identifyAll(self, readList):
+        bestAssociationList = []
+        for read in readList:
+            bestAssociation = self.identify(read)
+            if bestAssociation is not None:
+                bestAssociationList.append(bestAssociation)
+        return bestAssociationList
+
+
+readList = []
+outFname = None
+doBlastIndex = False
+options, args = getopt.getopt(sys.argv[1:], 'r:o:i:h')
+for opt, par in options:
+    if opt == '-h':
+        print 'options:'
+        print '-h: print this help and exit'
+        sys.exit()
+    elif opt == '-r':
+        readList.extend(Bio.SeqIO.parse(par, 'fasta'))
+    elif opt == '-o':
+        outFname = par
+    elif opt == '-i':
+        doBlastIndex = True
+    else:
+        raise StandardError, 'unhandled option "%s"' % opt
+blastRunner = BlastnRunner()
+blastRunner.numAlignments = 1
+readIdentifier = ReadIdentifierBlast(blastRunner, args)
+if doBlastIndex:
+    readIdentifier.blastIndex()
+associationList = readIdentifier.identifyAll(readList)
+associationDataFrame = makeAssociationDataFrame(associationList)
+if outFname is None:
+    associationDataFrame.writeCsv(sys.stdout)
+else:
+    with open(outFname, 'w') as f:
+        associationDataFrame.writeCsv(f)
